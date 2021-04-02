@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE configuration>
+
+<configuration scan="true">
+<conversionRule conversionWord="clr" converterClass="org.springframework.boot.logging.logback.ColorConverter" />
+	<conversionRule conversionWord="wex" converterClass="org.springframework.boot.logging.logback.WhitespaceThrowableProxyConverter" />
+	<conversionRule conversionWord="wEx" converterClass="org.springframework.boot.logging.logback.ExtendedWhitespaceThrowableProxyConverter" />
+	<property name="CONSOLE_LOG_PATTERN" value="${CONSOLE_LOG_PATTERN:-%clr([%d{${LOG_DATEFORMAT_PATTERN:-yyyy-MM-dd HH:mm:ss.SSS}}]){faint} %clr([%-5level]) %clr([%-40.40logger{39}]){cyan} %clr([%method : %line]){yellow} %clr([%thread{39}]){blue} %clr(:){faint} %n%m%n${LOG_EXCEPTION_CONVERSION_WORD:-%wEx}}"/>
+	<property resource="application.properties" />
+	<property scope="local" name="logDir" value="${aims.root.path}/env/log" />
+	<property scope="local" name="logRollingDir" value="${aims.root.path}/log/env/gw-app" />
+	<property scope="local" name="gwFileName" value="gw-app" />
+	<property scope="local" name="databaseFileName" value="database" />
+
+	<appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
+		<encoder>
+			<pattern>[%magenta(${spring.application.name})] [%blue(${hostname})] ${CONSOLE_LOG_PATTERN}</pattern>
+		</encoder>
+	</appender>
+
+	
+	<appender name="RollingFile" class="ch.qos.logback.core.rolling.RollingFileAppender">
+		<file>${logDir}/${gwFileName}.log</file>
+        <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+            <fileNamePattern>${logRollingDir}/${gwFileName}.%d{yyyy-MM-dd}.%i.log</fileNamePattern>
+            <!--each file should be at most 300MB, keep 2 days worth of history-->
+            <maxHistory>2</maxHistory>
+            <maxFileSize>300MB</maxFileSize>
+        </rollingPolicy>
+        <encoder>
+            <charset>UTF-8</charset>
+            <pattern>
+                [${spring.application.name}]  [%d{yyyy-MM-dd HH:mm:ss.SSS}][%-5level][%-85.85(%logger{39} : %method : %line)] %msg%n
+            </pattern>
+        </encoder>
+    </appender>
+	
+	<root level="info">
+		<appender-ref ref="STDOUT" />
+		<appender-ref ref="RollingFile" />
+	</root>
+	
+	<logger name="com.solum.aims.gateway" level="info" additivity="false">
+            <appender-ref ref="STDOUT"/>
+            <appender-ref ref="RollingFile"/>
+        </logger>
+
+</configuration>
