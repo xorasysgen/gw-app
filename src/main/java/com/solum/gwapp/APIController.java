@@ -1,13 +1,18 @@
 package com.solum.gwapp;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.HashMap;
-import java.util.LinkedList;
 import java.util.List;
 
+import com.google.gson.Gson;
 import lombok.Data;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.io.FileSystemResource;
+import org.springframework.core.io.Resource;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -27,8 +32,8 @@ import org.springframework.web.client.RestTemplate;
 public class APIController {
 	
 	
-	@Value("${json.body.key}")
-	private String key;
+	@Value("${json.body.key.username}")
+	private String username;
 	
 	@Value("${json.body.period}")
 	private String period;
@@ -52,6 +57,13 @@ public class APIController {
 	@Value("${gw.target.port}")
 	private String gwTargetPort;
 
+	@Value("${json.body.filename}")
+	private String filename;
+
+	@Value("${json.body.extension}")
+	private String fileExtension;
+
+
 
 	private final String prepareGWURL(String host) {
 		return new StringBuilder()
@@ -72,7 +84,7 @@ public class APIController {
 		Date now = new Date();
 		String strDate = sdfDate.format(now);
 		HashMap<String, String> start = new HashMap<>();
-		start.put("msg", "core-gw is running");
+		start.put("msg", "api-v2-gw is running");
 		start.put("version", "1.0.0");
 		start.put("timestamp", strDate);
 		log.info("revision no: " + start);
@@ -83,16 +95,13 @@ public class APIController {
 	public void serviceCallToCommonService() {
 		Integer i=1;
 		while(true) {
-			if (i > Integer.parseInt(executionLimit))
+			if (i++ > Integer.parseInt(executionLimit))
 				break;
 			HttpHeaders headers = new HttpHeaders();
 			headers.setContentType(MediaType.APPLICATION_JSON);
-
 			log.info("Common Service Target {}", csTargetFinal);
 			MultiValueMap<String, String> map = new LinkedMultiValueMap<String, String>();
-
 			HttpEntity<String> request = new HttpEntity<String>(headers);
-
 			try {
 				ResponseEntity<Root> response = new RestTemplate().getForEntity(csTargetFinal, Root.class);
 				log.info("Common Service response {} ", response.getBody());
@@ -103,7 +112,9 @@ public class APIController {
 					for (Fullgwlist gateway : listFullgwlist) {
 						String target = prepareGWURL(gateway.getIpAddress());
 						log.info("Gateway IP : {}, Gateway Status :{}", gateway.getIpAddress(), gateway.getStatus());
-						executingLoopCallToGateway(target);
+						executingGateway(gateway.getIpAddress(),target);
+						//String target = prepareGWURL("202.122.21.74");
+						//executingLoopCallToGateway("202.122.21.74",target);
 					}
 				}
 
@@ -118,19 +129,26 @@ public class APIController {
 
 	}
 
-	private final void executingLoopCallToGateway(String gwPreparedTarget) {
+	private final void executingGateway(String Ip,String gwPreparedTarget)  {
+		String key=Utils.getMD5Hash(Ip.concat(username));
 		Req req=new Req();
 		req.setKey(key);
 		req.setPeriod(Integer.parseInt(period));
 		req.setCount(Integer.parseInt(count));
 
+		MultiValueMap<String, Object> parts =new LinkedMultiValueMap<String, Object>();
+		parts.add("data", createAndUploadFile(req));
+		parts.add("filename", "data_ClientPollPram.json");
+		log.info("File uploaded location {}",parts.toString());
+
 		HttpHeaders headers = new HttpHeaders();
-		headers.setContentType(MediaType.APPLICATION_JSON);
+		//headers.setContentType(MediaType.TEXT_PLAIN);
 		log.info("Gateway Target : {}",gwPreparedTarget);
 		log.info("Gateway post request body : {}",req.toString());
-		HttpEntity<Req> request = new HttpEntity<>(req, headers);
+
+		HttpEntity<MultiValueMap<String, Object>> requestEntity =	new HttpEntity<MultiValueMap<String, Object>>(parts, headers);
 		try {
-			ResponseEntity<String> response = new RestTemplate().postForEntity(gwPreparedTarget,request, String.class);
+			ResponseEntity<String> response = new RestTemplate().postForEntity(gwPreparedTarget,requestEntity, String.class);
 			log.info("Gateway response : {} ", response.getBody());
 		} catch (HttpStatusCodeException e) {
 			log.error("Gateway Service failed HttpStatusCodeException reason :{}", e.getMessage().concat(e.getResponseBodyAsString()!=null && !e.getResponseBodyAsString().isEmpty()? " | " + e.getResponseBodyAsString():""));
@@ -140,6 +158,18 @@ public class APIController {
 			log.error("Gateway Service failed general reason :{}", e.getMessage());
 		}
 
+	}
+
+	private final Resource createAndUploadFile(Req req)  {
+		Path file = null;
+		try {
+			file = Files.createTempFile(filename, fileExtension);
+		log.info("Uploading data File to : {} " , file);
+		Files.write(file, new Gson().toJson(req).getBytes());
+		} catch (IOException e) {
+			log.error("Unable to create temp file - I/O error: {}", e);
+		}
+		return new FileSystemResource(file.toFile());
 	}
 
 	@Data
