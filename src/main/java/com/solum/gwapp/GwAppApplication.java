@@ -15,7 +15,7 @@ import java.security.cert.CertificateException;
 import java.security.cert.X509Certificate;
 
 @SpringBootApplication
-@PropertySource(value={"file:${aims.root.path}/env/aims.properties"})
+@PropertySource(value={"file:${aims.root.path}/env/gw.properties"})
 public class GwAppApplication {
 
    public static void main(String[] args) {

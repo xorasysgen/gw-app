@@ -4,12 +4,19 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.text.SimpleDateFormat;
-import java.util.Date;
-import java.util.HashMap;
-import java.util.List;
+import java.util.*;
 
 import com.google.gson.Gson;
+import com.solum.gwapp.repository.GatewayStatusReportRepository;
+import com.solum.gwapp.service.CSVExport;
+import com.solum.gwapp.repository.GwRepository;
 import lombok.Data;
+import org.springframework.batch.core.*;
+import org.springframework.batch.core.launch.JobLauncher;
+import org.springframework.batch.core.repository.JobExecutionAlreadyRunningException;
+import org.springframework.batch.core.repository.JobInstanceAlreadyCompleteException;
+import org.springframework.batch.core.repository.JobRestartException;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.FileSystemResource;
 import org.springframework.core.io.Resource;
@@ -27,11 +34,27 @@ import org.springframework.web.client.HttpStatusCodeException;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestTemplate;
 
+import javax.servlet.http.HttpServletResponse;
+
 @Slf4j
 @RestController("/")
 public class APIController {
-	
-	
+
+	@Autowired
+	JobLauncher jobLauncher;
+
+	@Autowired
+	Job gwJob;
+
+	@Autowired
+	GwRepository repository;
+
+	@Autowired
+	GatewayStatusReportRepository gwstatusRepository;
+
+	@Autowired
+	CSVExport csvExport;
+
 	@Value("${json.body.key.username}")
 	private String username;
 	
@@ -57,15 +80,18 @@ public class APIController {
 	@Value("${gw.target.port}")
 	private String gwTargetPort;
 
+	@Value("${gw.target.uri.config}")
+	private String gwTargetURIConfig;
+
 	@Value("${json.body.filename}")
 	private String filename;
 
 	@Value("${json.body.extension}")
 	private String fileExtension;
 
+	private Map<String,String> responseMap=new LinkedHashMap<>();
 
-
-	private final String prepareGWURL(String host) {
+	public final String prepareGWURL(String host) {
 		return new StringBuilder()
 				.append(gwTargetProtocol)
 				.append("://")
@@ -76,6 +102,20 @@ public class APIController {
 				.append(gwTargetURI)
 				.toString();
 	}
+
+	public final String prepareGWURLConfig(String host) {
+		return new StringBuilder()
+				.append(gwTargetProtocol)
+				.append("://")
+				.append(host)
+				.append(":")
+				.append(gwTargetPort)
+				.append("/")
+				.append(gwTargetURIConfig)
+				.toString();
+	}
+
+
 
 
 	@GetMapping("/welcome")
@@ -90,6 +130,64 @@ public class APIController {
 		log.info("revision no: " + start);
 		return ResponseEntity.ok().body(start);
 	}
+
+	@GetMapping("/csv/gw")
+	public void getProcessedCSV(HttpServletResponse httpServletResponse) {
+		csvExport.generateCsvResponse(httpServletResponse);
+	}
+
+	@GetMapping("/csv/gw/list")
+	public void downloadGatewayList(HttpServletResponse httpServletResponse){
+
+			HttpHeaders headers = new HttpHeaders();
+			headers.setContentType(MediaType.APPLICATION_JSON);
+			log.info("Common Service Target {}", csTargetFinal);
+			MultiValueMap<String, String> map = new LinkedMultiValueMap<String, String>();
+			HttpEntity<String> request = new HttpEntity<String>(headers);
+			try {
+				ResponseEntity<Root> response = new RestTemplate().getForEntity(csTargetFinal, Root.class);
+				log.info("Common Service response {} ", response.getBody());
+				Integer gwSize = response.getBody().fullgwlist.size();
+				log.info("No of gateway found : {}", gwSize);
+				List<Fullgwlist> listFullgwlist = response.getBody().getFullgwlist();
+				if (gwSize > 0) {
+					csvExport.generateCsvResponse(httpServletResponse,listFullgwlist);
+				}
+
+			} catch (HttpStatusCodeException e) {
+				log.error("Common Service failed HttpStatusCodeException reason :{}", e.getMessage().concat(e.getResponseBodyAsString() != null && !e.getResponseBodyAsString().isEmpty() ? " | " + e.getResponseBodyAsString() : ""));
+			} catch (RestClientException e) {
+				log.error("Common Service failed RestClientException reason :{}", e.getMessage());
+			} catch (Exception e) {
+				log.error("Common Service failed general reason :{}", e.getMessage());
+			}
+		}
+
+
+	@GetMapping("/csv/gw/run")
+	public String runBatch() {
+		gwstatusRepository.deleteAll();
+		HashMap<String, JobParameter> map=new HashMap<>();
+		map.put("Time", new JobParameter(System.currentTimeMillis()));
+		JobParameters jobParameters=new JobParameters(map);
+		try {
+			JobExecution je=jobLauncher.run(gwJob, jobParameters);
+			log.info("Job Status:" + je.getStatus());
+			while(je.isRunning()) {
+				log.info("Job Running");
+			}
+			String status=je.getStatus().toString();
+			return "".concat("<< JOB ").concat(status).concat(" >> Downloadable file is ready, GO GET /csv/gw");
+		} catch (JobExecutionAlreadyRunningException | JobRestartException | JobInstanceAlreadyCompleteException
+				| JobParametersInvalidException e) {
+			log.error("Job execution failed{}", e.getMessage());
+		}
+		return null;
+
+
+	}
+
+
 
 	@GetMapping("/execute")
 	public void serviceCallToCommonService() {
@@ -129,7 +227,7 @@ public class APIController {
 
 	}
 
-	private final void executingGateway(String Ip,String gwPreparedTarget)  {
+	public final Map<String,String> executingGateway(String Ip,String gwPreparedTarget)  {
 		String key=Utils.getMD5Hash(Ip.concat(username));
 		Req req=new Req();
 		req.setKey(key);
@@ -147,17 +245,26 @@ public class APIController {
 		log.info("Gateway post request body : {}",req.toString());
 
 		HttpEntity<MultiValueMap<String, Object>> requestEntity =	new HttpEntity<MultiValueMap<String, Object>>(parts, headers);
+
 		try {
 			ResponseEntity<String> response = new RestTemplate().postForEntity(gwPreparedTarget,requestEntity, String.class);
 			log.info("Gateway response : {} ", response.getBody());
+			responseMap.put("SUCCESS",response.getBody().toString());
+			return responseMap;
 		} catch (HttpStatusCodeException e) {
-			log.error("Gateway Service failed HttpStatusCodeException reason :{}", e.getMessage().concat(e.getResponseBodyAsString()!=null && !e.getResponseBodyAsString().isEmpty()? " | " + e.getResponseBodyAsString():""));
+			String msg=e.getMessage().concat(e.getResponseBodyAsString()!=null && !e.getResponseBodyAsString().isEmpty()? " | " + e.getResponseBodyAsString():"");
+			log.error("Gateway Service failed HttpStatusCodeException reason :{}", msg);
+			responseMap.put("ERROR",msg);
+			return responseMap;
 		} catch (RestClientException e) {
 			log.error("Gateway Service failed RestClientException reason :{}", e.getMessage());
+			responseMap.put("ERROR",e.getMessage());
 		} catch (Exception e) {
 			log.error("Gateway Service failed general reason :{}", e.getMessage());
+			responseMap.put("ERROR",e.getMessage());
 		}
 
+		return responseMap;
 	}
 
 	private final Resource createAndUploadFile(Req req)  {
