@@ -7,6 +7,8 @@ import java.text.SimpleDateFormat;
 import java.util.*;
 
 import com.google.gson.Gson;
+import com.solum.gwapp.dto.*;
+import com.solum.gwapp.repository.GatewayStatusReportAutoSavedRepository;
 import com.solum.gwapp.repository.GatewayStatusReportRepository;
 import com.solum.gwapp.service.CSVExport;
 import com.solum.gwapp.repository.GwRepository;
@@ -50,7 +52,10 @@ public class APIController {
 	GwRepository repository;
 
 	@Autowired
-	GatewayStatusReportRepository gwstatusRepository;
+	GatewayStatusReportRepository gwStatusRepository;
+
+	@Autowired
+	GatewayStatusReportAutoSavedRepository gatewayStatusReportAutoSavedRepository;
 
 	@Autowired
 	CSVExport csvExport;
@@ -89,7 +94,18 @@ public class APIController {
 	@Value("${json.body.extension}")
 	private String fileExtension;
 
-	private Map<String,String> responseMap=new LinkedHashMap<>();
+	@Value("${filename}")
+	Resource resource;
+
+	RestTemplate restTemplate;
+
+	@Autowired
+	public void setRestTemplate(RestTemplate restTemplate) {
+		this.restTemplate = restTemplate;
+	}
+
+	private final Map<String,String> apiResponseMap=new LinkedHashMap<>();
+	private final Map<String,String>  responseMap=new LinkedHashMap<>();
 
 	public final String prepareGWURL(String host) {
 		return new StringBuilder()
@@ -166,7 +182,7 @@ public class APIController {
 
 	@GetMapping("/csv/gw/run")
 	public String runBatch() {
-		gwstatusRepository.deleteAll();
+		gwStatusRepository.deleteAll();
 		HashMap<String, JobParameter> map=new HashMap<>();
 		map.put("Time", new JobParameter(System.currentTimeMillis()));
 		JobParameters jobParameters=new JobParameters(map);
@@ -177,9 +193,11 @@ public class APIController {
 				log.info("Job Running");
 			}
 			String status=je.getStatus().toString();
-			return "".concat("<< JOB ").concat(status).concat(" >> Downloadable file is ready, GO GET /csv/gw");
-		} catch (JobExecutionAlreadyRunningException | JobRestartException | JobInstanceAlreadyCompleteException
-				| JobParametersInvalidException e) {
+			boolean fileExist=resource.exists();
+			if(!fileExist)
+				return  "".concat("JOB ").concat(status).concat("<br> Possible Reason : CSV file does not exist in location :".concat(resource.getURL().getPath()));
+			return "".concat("JOB ").concat(status).concat(status.equals("COMPLETED")?"<br>Downloadable file is ready, GO GET /csv/gw":"<br> Possible Reason : CSV file may have Extra Blank line, may have Invalid Character like . or ' etc");
+		} catch (JobExecutionAlreadyRunningException | JobRestartException | JobInstanceAlreadyCompleteException | JobParametersInvalidException | IOException e) {
 			log.error("Job execution failed{}", e.getMessage());
 		}
 		return null;
@@ -187,11 +205,15 @@ public class APIController {
 
 	}
 
-
+	@GetMapping("/autosaved")
+	public void getProcessedData(HttpServletResponse httpServletResponse) {
+		csvExport.generateAutoSavedResponse(httpServletResponse);
+	}
 
 	@GetMapping("/execute")
-	public void serviceCallToCommonService() {
-		Integer i=1;
+	public String serviceCallToCommonService() {
+		apiResponseMap.clear();
+		int i=1;
 		while(true) {
 			if (i++ > Integer.parseInt(executionLimit))
 				break;
@@ -201,38 +223,126 @@ public class APIController {
 			MultiValueMap<String, String> map = new LinkedMultiValueMap<String, String>();
 			HttpEntity<String> request = new HttpEntity<String>(headers);
 			try {
-				ResponseEntity<Root> response = new RestTemplate().getForEntity(csTargetFinal, Root.class);
+				ResponseEntity<Root> response = restTemplate.getForEntity(csTargetFinal, Root.class);
 				log.info("Common Service response {} ", response.getBody());
-				Integer gwSize = response.getBody().fullgwlist.size();
+				Integer gwSize = response.getBody().fullgwlist!=null?response.getBody().fullgwlist.size():-1;
 				log.info("No of gateway found : {}", gwSize);
-				List<Fullgwlist> listFullgwlist = response.getBody().getFullgwlist();
+				List<Fullgwlist> fullGwList = response!=null ? response.getBody().getFullgwlist(): new ArrayList<>();
+				if(Optional.ofNullable(fullGwList).isPresent()) {
+					long disconnected = fullGwList.stream().filter(gws -> gws.getStatus().equalsIgnoreCase("DISCONNECTED")).count();
+					log.info("No of gateway, Disconnected : {}", disconnected);
+					log.info("No of gateway, Connected : {}", gwSize - disconnected);
+				}
+				else{
+					log.warn("No gateway found!");
+				}
 				if (gwSize > 0) {
-					for (Fullgwlist gateway : listFullgwlist) {
+					for (Fullgwlist gateway : fullGwList) {
+						if(gateway.getStatus().equalsIgnoreCase("DISCONNECTED"))
+							continue;
+						GatewayStatusReportAutoSaved gatewayStatusReportAutoSaved=new GatewayStatusReportAutoSaved();
 						String target = prepareGWURL(gateway.getIpAddress());
 						log.info("Gateway IP : {}, Gateway Status :{}", gateway.getIpAddress(), gateway.getStatus());
-						executingGateway(gateway.getIpAddress(),target);
+						Map<String,String> apiResponseMap=executingGateway(gateway.getIpAddress(),target);
 						//String target = prepareGWURL("202.122.21.74");
 						//executingLoopCallToGateway("202.122.21.74",target);
+
+						String successJSON=apiResponseMap.get("SUCCESS");
+						String error=apiResponseMap.get("ERROR");
+						if(Optional.ofNullable(successJSON).isPresent()) {
+							GwResponse gwResponse = new Gson().fromJson(successJSON, GwResponse.class);
+							String pollingStatus=gwResponse.isResult()?"Success":"Failed";
+							String gwConfigTarget=prepareGWURLConfig(gateway.getIpAddress());
+							GatewayStatus gatewayStatus=fetchGwPollstatus(gwConfigTarget);
+							if(Optional.ofNullable(gatewayStatus).isPresent()) {
+								gatewayStatusReportAutoSaved.setGwIP(gateway.getIpAddress());
+								gatewayStatusReportAutoSaved.setPollCount(gatewayStatus.getPollCount());
+								gatewayStatusReportAutoSaved.setPollPeriod(gatewayStatus.getPollPeriod());
+								gatewayStatusReportAutoSaved.setResponseJson(successJSON);
+								gatewayStatusReportAutoSaved.setStatus(pollingStatus);
+							}
+						}
+						else
+						{
+							String pollingStatus="Failed";
+							gatewayStatusReportAutoSaved.setGwIP(gateway.getIpAddress());
+							gatewayStatusReportAutoSaved.setPollCount(-1);
+							gatewayStatusReportAutoSaved.setPollPeriod(-1);
+							gatewayStatusReportAutoSaved.setResponseJson(error);
+							gatewayStatusReportAutoSaved.setStatus(pollingStatus);
+						}
+
+						log.info("Auto save gatewayStatusReport into database");
+						gatewayStatusReportAutoSavedRepository.saveAndFlush(gatewayStatusReportAutoSaved);
+						gatewayStatusReportAutoSavedRepository.flush();
+						gatewayStatusReportAutoSaved=null;
 					}
+					return "Execution Completed, Downloadable file is ready, GO GET /autosaved";
 				}
 
 			} catch (HttpStatusCodeException e) {
 				log.error("Common Service failed HttpStatusCodeException reason :{}", e.getMessage().concat(e.getResponseBodyAsString() != null && !e.getResponseBodyAsString().isEmpty() ? " | " + e.getResponseBodyAsString() : ""));
+				return "Execution Failed, Reason:".concat( e.getMessage().concat(e.getResponseBodyAsString() != null && !e.getResponseBodyAsString().isEmpty() ? " | " + e.getResponseBodyAsString() : ""));
 			} catch (RestClientException e) {
 				log.error("Common Service failed RestClientException reason :{}", e.getMessage());
+				return "Execution Failed, Reason:".concat(e.getMessage());
 			} catch (Exception e) {
 				log.error("Common Service failed general reason :{}", e.getMessage());
+				return "Execution Failed, Reason:".concat(e.getMessage());
 			}
 		}
-
+	return "Execution Failed Reason: Unknown";
 	}
 
 	public final Map<String,String> executingGateway(String Ip,String gwPreparedTarget)  {
+
 		String key=Utils.getMD5Hash(Ip.concat(username));
 		Req req=new Req();
 		req.setKey(key);
 		req.setPeriod(Integer.parseInt(period));
 		req.setCount(Integer.parseInt(count));
+
+		MultiValueMap<String, Object> parts =new LinkedMultiValueMap<String, Object>();
+		parts.add("data", createAndUploadFile(req));
+		parts.add("filename", "data_ClientPollPram.json");
+		log.info("File uploaded location {}",parts.toString());
+
+		HttpHeaders headers = new HttpHeaders();
+		//headers.setContentType(MediaType.TEXT_PLAIN);
+		log.info("Gateway Target : {}",gwPreparedTarget);
+		log.info("Gateway post request body : {}",req.toString());
+
+		HttpEntity<MultiValueMap<String, Object>> requestEntity =	new HttpEntity<MultiValueMap<String, Object>>(parts, headers);
+
+		try {
+			ResponseEntity<String> response = restTemplate.postForEntity(gwPreparedTarget,requestEntity, String.class);
+			log.info("Gateway response : {} ", response.getBody());
+			apiResponseMap.put("SUCCESS",response.getBody().toString());
+			return apiResponseMap;
+		} catch (HttpStatusCodeException e) {
+			String msg=e.getMessage().concat(e.getResponseBodyAsString()!=null && !e.getResponseBodyAsString().isEmpty()? " | " + e.getResponseBodyAsString():"");
+			log.error("Gateway Service failed HttpStatusCodeException reason :{}", msg);
+			apiResponseMap.put("ERROR",msg);
+			return apiResponseMap;
+		} catch (RestClientException e) {
+			log.error("Gateway Service failed RestClientException reason :{}", e.getMessage());
+			apiResponseMap.put("ERROR",e.getMessage());
+		} catch (Exception e) {
+			log.error("Gateway Service failed general reason :{}", e.getMessage());
+			apiResponseMap.put("ERROR",e.getMessage());
+		}
+
+		return apiResponseMap;
+	}
+
+
+	public final Map<String,String> executingGateway(String Ip,String gwPreparedTarget,String csvPeriod,String csvCount)  {
+		responseMap.clear();
+		String key=Utils.getMD5Hash(Ip.concat(username));
+		Req req=new Req();
+		req.setKey(key);
+		req.setPeriod(Integer.parseInt(csvPeriod));
+		req.setCount(Integer.parseInt(csvCount));
 
 		MultiValueMap<String, Object> parts =new LinkedMultiValueMap<String, Object>();
 		parts.add("data", createAndUploadFile(req));
@@ -266,6 +376,37 @@ public class APIController {
 
 		return responseMap;
 	}
+
+
+	private final GatewayStatus fetchGwPollstatus(String gwConfigTarget){
+		{
+			HttpHeaders headers = new HttpHeaders();
+			headers.setContentType(MediaType.TEXT_PLAIN);
+			log.info("Gateway config Target {}", gwConfigTarget);
+
+			HttpEntity<String> request = new HttpEntity<String>(headers);
+			try {
+				ResponseEntity<String> response = new RestTemplate().getForEntity(gwConfigTarget, String.class);
+				String jsonResponse=response.getBody().toString();
+				GatewayStatus gatewayStatus=new Gson().fromJson(jsonResponse,GatewayStatus.class);
+				log.info("Gateway config response  {} ", response.getBody());
+				log.info("PollPeriod  : {}, PollCount  :{}", gatewayStatus.getPollPeriod(), gatewayStatus.getPollCount());
+				return gatewayStatus;
+
+			} catch (HttpStatusCodeException e) {
+				log.error("Gateway config failed HttpStatusCodeException reason :{}", e.getMessage().concat(e.getResponseBodyAsString() != null && !e.getResponseBodyAsString().isEmpty() ? " | " + e.getResponseBodyAsString() : ""));
+				return null;
+			} catch (RestClientException e) {
+				log.error("Gateway config RestClientException reason :{}", e.getMessage());
+				return null;
+			} catch (Exception e) {
+				log.error("Gateway config general reason :{}", e.getMessage());
+				return null;
+			}
+		}
+	}
+
+
 
 	private final Resource createAndUploadFile(Req req)  {
 		Path file = null;

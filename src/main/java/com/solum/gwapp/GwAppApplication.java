@@ -4,6 +4,7 @@ import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.PropertySource;
+import org.springframework.web.client.RestTemplate;
 
 import javax.net.ssl.HostnameVerifier;
 import javax.net.ssl.HttpsURLConnection;
@@ -21,6 +22,12 @@ public class GwAppApplication {
    public static void main(String[] args) {
       SpringApplication.run(GwAppApplication.class, args);
    }
+
+   @Bean
+   public RestTemplate getRestTemplate() {
+      return new RestTemplate();
+   }
+
    @Bean
    public Boolean disableSSLValidation() throws Exception {
       final SSLContext sslContext = SSLContext.getInstance("TLS");

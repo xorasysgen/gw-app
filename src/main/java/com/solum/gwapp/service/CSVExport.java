@@ -1,7 +1,11 @@
 package com.solum.gwapp.service;
 
 import com.solum.gwapp.APIController;
+import com.solum.gwapp.dto.GatewayStatusReport;
+import com.solum.gwapp.dto.GatewayStatusReportAutoSaved;
 import com.solum.gwapp.dto.GwDTO;
+import com.solum.gwapp.repository.GatewayStatusReportAutoSavedRepository;
+import com.solum.gwapp.repository.GatewayStatusReportRepository;
 import com.solum.gwapp.repository.GwRepository;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.csv.CSVFormat;
@@ -14,6 +18,7 @@ import org.springframework.stereotype.Service;
 import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.util.Arrays;
+import java.util.Date;
 import java.util.List;
 
 @Service
@@ -21,7 +26,7 @@ import java.util.List;
 public class CSVExport {
 
    @Autowired
-   GwRepository gwRepository;
+   GatewayStatusReportRepository gatewayStatusReportRepository;
 
    @Value("${json.body.period}")
    private String period;
@@ -29,24 +34,61 @@ public class CSVExport {
    @Value("${json.body.count}")
    private String count;
 
-   public void generateCsvResponse(HttpServletResponse response) {
+   @Autowired
+   GatewayStatusReportAutoSavedRepository gatewayStatusReportAutoSavedRepository;
 
-      String filename = "gw_connect_job_status.csv";
-      List<GwDTO> gw= gwRepository.findAll();
+   public void generateAutoSavedResponse(HttpServletResponse response) {
+
+      String filename = "gw_connect_status_auto_saved".concat(new Date().toString()).concat(".csv");
+      List<GatewayStatusReportAutoSaved> gw= gatewayStatusReportAutoSavedRepository.findAll();
       CSVPrinter csvPrinter=null;
       try {
          response.setContentType("text/csv");
          response.setHeader(HttpHeaders.CONTENT_DISPOSITION,
                  "attachment; filename=\"" + filename + "\"");
          csvPrinter = new CSVPrinter(response.getWriter(),
-                 CSVFormat.DEFAULT.withHeader("gwIP", "period", "count"));
+                 CSVFormat.DEFAULT.withHeader("GWProcID", "Gateway IP", "Period", "Count","Status","Gateway Response"));
          if(gw!=null && gw.size()>0){
-            for (GwDTO gwDTO : gw) {
-               csvPrinter.printRecord(Arrays.asList(gwDTO.getGwIP(), gwDTO.getPeriod(),gwDTO.getCount()));
+            for (GatewayStatusReportAutoSaved gatewayStatusReport : gw) {
+               csvPrinter.printRecord(Arrays.asList(gatewayStatusReport.getId(),gatewayStatusReport.getGwIP(), gatewayStatusReport.getPollPeriod(),gatewayStatusReport.getPollCount(),gatewayStatusReport.getStatus(),gatewayStatusReport.getResponseJson()));
             }
          }
          else{
-            csvPrinter.printRecord(Arrays.asList("NA", "NA", "NA"));
+            csvPrinter.printRecord(Arrays.asList("NA", "NA", "NA","NA", "NA", "NA","NA"));
+         }
+
+
+      } catch (IOException e) {
+         log.error("CSV Export Failed {}",e.getMessage());
+      } finally {
+         if(csvPrinter != null) {
+            try {
+               csvPrinter.close();
+            } catch (IOException e) {
+               log.error("CSV printer Failed to close : {}",e.getMessage());
+            }
+         }
+      }
+   }
+
+   public void generateCsvResponse(HttpServletResponse response) {
+
+      String filename = "gw_connect_job_status_".concat(new Date().toString()).concat(".csv");
+      List<GatewayStatusReport> gw= gatewayStatusReportRepository.findAll();
+      CSVPrinter csvPrinter=null;
+      try {
+         response.setContentType("text/csv");
+         response.setHeader(HttpHeaders.CONTENT_DISPOSITION,
+                 "attachment; filename=\"" + filename + "\"");
+         csvPrinter = new CSVPrinter(response.getWriter(),
+                 CSVFormat.DEFAULT.withHeader("GWProcID", "Gateway IP", "Period", "Count","Status","Gateway Response"));
+         if(gw!=null && gw.size()>0){
+            for (GatewayStatusReport gatewayStatusReport : gw) {
+               csvPrinter.printRecord(Arrays.asList(gatewayStatusReport.getId(),gatewayStatusReport.getGwIP(), gatewayStatusReport.getPollPeriod(),gatewayStatusReport.getPollCount(),gatewayStatusReport.getStatus(),gatewayStatusReport.getResponseJson()));
+            }
+         }
+         else{
+            csvPrinter.printRecord(Arrays.asList("NA", "NA", "NA","NA", "NA", "NA","NA"));
          }
 
 

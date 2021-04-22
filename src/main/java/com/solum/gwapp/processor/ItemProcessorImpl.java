@@ -41,6 +41,7 @@ public class ItemProcessorImpl  implements ItemProcessor<GwDTO, GwDTO> {
 	@Autowired
 	GatewayStatusReportRepository gwstatusRepository;
 
+
 	@Override
 	public GwDTO process(GwDTO item) throws Exception {
 		GatewayStatusReport gatewayStatusReport=new GatewayStatusReport();
@@ -48,7 +49,7 @@ public class ItemProcessorImpl  implements ItemProcessor<GwDTO, GwDTO> {
 		log.info("Processing csv gw request...");
 		String target = apiController.prepareGWURL(gwDTO.getGwIP());
 		log.info("Request Gateway IP : {}, Gateway Period :{}, Gateway Count :{}", gwDTO.getGwIP(), gwDTO.getPeriod(),gwDTO.getCount());
-		Map<String,String> response=apiController.executingGateway(gwDTO.getGwIP(),target);
+		Map<String,String> response=apiController.executingGateway(gwDTO.getGwIP(),target,gwDTO.getPeriod(),gwDTO.getCount());
 		String successJSON=response.get("SUCCESS");
 		String error=response.get("ERROR");
 		if(Optional.ofNullable(successJSON).isPresent()) {
@@ -73,22 +74,28 @@ public class ItemProcessorImpl  implements ItemProcessor<GwDTO, GwDTO> {
 				gatewayStatusReport.setResponseJson(error);
 				gatewayStatusReport.setStatus(pollingStatus);
 		}
-		gwstatusRepository.save(gatewayStatusReport);
+
+		log.info("saving gatewayStatusReport into database");
+		gwstatusRepository.saveAndFlush(gatewayStatusReport);
+		gwstatusRepository.flush();
+
 		return  gwDTO;
 	}
 
 	private final GatewayStatus fetchGwPollstatus(String gwConfigTarget){
 		{
 			HttpHeaders headers = new HttpHeaders();
-			headers.setContentType(MediaType.APPLICATION_JSON);
+			headers.setContentType(MediaType.TEXT_PLAIN);
 			log.info("Gateway config Target {}", gwConfigTarget);
-			MultiValueMap<String, String> map = new LinkedMultiValueMap<String, String>();
+
 			HttpEntity<String> request = new HttpEntity<String>(headers);
 			try {
-				ResponseEntity<GatewayStatus> response = new RestTemplate().getForEntity(gwConfigTarget, GatewayStatus.class);
+				ResponseEntity<String> response = new RestTemplate().getForEntity(gwConfigTarget, String.class);
+				String jsonResponse=response.getBody().toString();
+				GatewayStatus gatewayStatus=new Gson().fromJson(jsonResponse,GatewayStatus.class);
 				log.info("Gateway config response  {} ", response.getBody());
-				log.info("PollPeriod  : {}, PollCount  :{}", response.getBody().getPollPeriod(), response.getBody().getPollCount());
-				return response.getBody();
+				log.info("PollPeriod  : {}, PollCount  :{}", gatewayStatus.getPollPeriod(), gatewayStatus.getPollCount());
+				return gatewayStatus;
 
 			} catch (HttpStatusCodeException e) {
 				log.error("Gateway config failed HttpStatusCodeException reason :{}", e.getMessage().concat(e.getResponseBodyAsString() != null && !e.getResponseBodyAsString().isEmpty() ? " | " + e.getResponseBodyAsString() : ""));
@@ -102,5 +109,6 @@ public class ItemProcessorImpl  implements ItemProcessor<GwDTO, GwDTO> {
 			}
 		}
 	}
-	
+
+
 }
