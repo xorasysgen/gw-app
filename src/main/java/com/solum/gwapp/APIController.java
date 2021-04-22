@@ -20,6 +20,7 @@ import org.springframework.batch.core.repository.JobInstanceAlreadyCompleteExcep
 import org.springframework.batch.core.repository.JobRestartException;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.context.properties.bind.DefaultValue;
 import org.springframework.core.io.FileSystemResource;
 import org.springframework.core.io.Resource;
 import org.springframework.http.HttpEntity;
@@ -29,6 +30,8 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import lombok.extern.slf4j.Slf4j;
@@ -214,9 +217,11 @@ public class APIController {
 		csvExport.generateAutoSavedResponse(httpServletResponse);
 	}
 
-	@GetMapping("/execute")
-	public String serviceCallToCommonService() {
+	@GetMapping(value  = {"/execute","/execute/{autoSaveDecision}"})
+	public String serviceCallToCommonService(@PathVariable(required = false) String autoSaveDecision) {
 		apiResponseMap.clear();
+		gatewayStatusReportAutoSavedRepository.deleteAll();
+		gatewayStatusReportAutoSavedRepository.flush();
 		int i=1;
 		while(true) {
 			if (i++ > Integer.parseInt(executionLimit))
@@ -251,35 +256,8 @@ public class APIController {
 						//String target = prepareGWURL("202.122.21.74");
 						//executingLoopCallToGateway("202.122.21.74",target);
 
-						String successJSON=apiResponseMap.get("SUCCESS");
-						String error=apiResponseMap.get("ERROR");
-						if(Optional.ofNullable(successJSON).isPresent()) {
-							GwResponse gwResponse = new Gson().fromJson(successJSON, GwResponse.class);
-							String pollingStatus=gwResponse.isResult()?"Success":"Failed";
-							String gwConfigTarget=prepareGWURLConfig(gateway.getIpAddress());
-							GatewayStatus gatewayStatus=fetchGwPollstatus(gwConfigTarget);
-							if(Optional.ofNullable(gatewayStatus).isPresent()) {
-								gatewayStatusReportAutoSaved.setGwIP(gateway.getIpAddress());
-								gatewayStatusReportAutoSaved.setPollCount(gatewayStatus.getPollCount());
-								gatewayStatusReportAutoSaved.setPollPeriod(gatewayStatus.getPollPeriod());
-								gatewayStatusReportAutoSaved.setResponseJson(successJSON);
-								gatewayStatusReportAutoSaved.setStatus(pollingStatus);
-							}
-						}
-						else
-						{
-							String pollingStatus="Failed";
-							gatewayStatusReportAutoSaved.setGwIP(gateway.getIpAddress());
-							gatewayStatusReportAutoSaved.setPollCount(-1);
-							gatewayStatusReportAutoSaved.setPollPeriod(-1);
-							gatewayStatusReportAutoSaved.setResponseJson(error);
-							gatewayStatusReportAutoSaved.setStatus(pollingStatus);
-						}
-
-						log.info("Auto save gatewayStatusReport into database");
-						gatewayStatusReportAutoSavedRepository.saveAndFlush(gatewayStatusReportAutoSaved);
-						gatewayStatusReportAutoSavedRepository.flush();
-						gatewayStatusReportAutoSaved=null;
+						if(autoSaveDecision!=null && autoSaveDecision.equalsIgnoreCase("save"))
+						AutoSaveGatewayStatusReport(gateway, gatewayStatusReportAutoSaved, apiResponseMap);
 					}
 					return "Execution Completed, Downloadable file is ready, GO GET /autosaved";
 				}
@@ -296,6 +274,38 @@ public class APIController {
 			}
 		}
 	return "Execution Failed Reason: Unknown";
+	}
+
+	private void AutoSaveGatewayStatusReport(Fullgwlist gateway, GatewayStatusReportAutoSaved gatewayStatusReportAutoSaved, Map<String, String> apiResponseMap) {
+		String successJSON=apiResponseMap.get("SUCCESS");
+		String error=apiResponseMap.get("ERROR");
+		if(Optional.ofNullable(successJSON).isPresent()) {
+			GwResponse gwResponse = new Gson().fromJson(successJSON, GwResponse.class);
+			String pollingStatus=gwResponse.isResult()?"Success":"Failed";
+			String gwConfigTarget=prepareGWURLConfig(gateway.getIpAddress());
+			GatewayStatus gatewayStatus=fetchGwPollstatus(gwConfigTarget);
+			if(Optional.ofNullable(gatewayStatus).isPresent()) {
+				gatewayStatusReportAutoSaved.setGwIP(gateway.getIpAddress());
+				gatewayStatusReportAutoSaved.setPollCount(gatewayStatus.getPollCount());
+				gatewayStatusReportAutoSaved.setPollPeriod(gatewayStatus.getPollPeriod());
+				gatewayStatusReportAutoSaved.setResponseJson(successJSON);
+				gatewayStatusReportAutoSaved.setStatus(pollingStatus);
+			}
+		}
+		else
+		{
+			String pollingStatus="Failed";
+			gatewayStatusReportAutoSaved.setGwIP(gateway.getIpAddress());
+			gatewayStatusReportAutoSaved.setPollCount(-1);
+			gatewayStatusReportAutoSaved.setPollPeriod(-1);
+			gatewayStatusReportAutoSaved.setResponseJson(error);
+			gatewayStatusReportAutoSaved.setStatus(pollingStatus);
+		}
+
+		log.info("Auto save gatewayStatusReport into database");
+		gatewayStatusReportAutoSavedRepository.saveAndFlush(gatewayStatusReportAutoSaved);
+		gatewayStatusReportAutoSavedRepository.flush();
+		gatewayStatusReportAutoSaved=null;
 	}
 
 	public final Map<String,String> executingGateway(String Ip,String gwPreparedTarget)  {
