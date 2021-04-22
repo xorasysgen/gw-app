@@ -154,20 +154,23 @@ public class APIController {
 
 	@GetMapping("/csv/gw/list")
 	public void downloadGatewayList(HttpServletResponse httpServletResponse){
-
-			HttpHeaders headers = new HttpHeaders();
-			headers.setContentType(MediaType.APPLICATION_JSON);
 			log.info("Common Service Target {}", csTargetFinal);
-			MultiValueMap<String, String> map = new LinkedMultiValueMap<String, String>();
-			HttpEntity<String> request = new HttpEntity<String>(headers);
 			try {
 				ResponseEntity<Root> response = new RestTemplate().getForEntity(csTargetFinal, Root.class);
 				log.info("Common Service response {} ", response.getBody());
-				Integer gwSize = response.getBody().fullgwlist.size();
+				Integer gwSize = response.getBody().fullgwlist!=null?response.getBody().fullgwlist.size():-1;
 				log.info("No of gateway found : {}", gwSize);
-				List<Fullgwlist> listFullgwlist = response.getBody().getFullgwlist();
+				List<Fullgwlist> fullGwLSize = response.getBody().getFullgwlist();
+				if(Optional.ofNullable(fullGwLSize).isPresent()) {
+					long disconnected = fullGwLSize.stream().filter(gws -> gws.getStatus().equalsIgnoreCase("DISCONNECTED")).count();
+					log.info("No of gateway, Disconnected : {}", disconnected);
+					log.info("No of gateway, Connected : {}", gwSize - disconnected);
+				}
+				else{
+					log.warn("No gateway found!");
+				}
 				if (gwSize > 0) {
-					csvExport.generateCsvResponse(httpServletResponse,listFullgwlist);
+					csvExport.generateCsvResponse(httpServletResponse,fullGwLSize);
 				}
 
 			} catch (HttpStatusCodeException e) {
@@ -177,6 +180,7 @@ public class APIController {
 			} catch (Exception e) {
 				log.error("Common Service failed general reason :{}", e.getMessage());
 			}
+		log.info("File Download Completed");
 		}
 
 

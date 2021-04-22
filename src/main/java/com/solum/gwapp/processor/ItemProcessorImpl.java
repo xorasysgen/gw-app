@@ -41,6 +41,13 @@ public class ItemProcessorImpl  implements ItemProcessor<GwDTO, GwDTO> {
 	@Autowired
 	GatewayStatusReportRepository gwstatusRepository;
 
+	RestTemplate restTemplate;
+
+	@Autowired
+	public void setRestTemplate(RestTemplate restTemplate) {
+		this.restTemplate = restTemplate;
+	}
+
 
 	@Override
 	public GwDTO process(GwDTO item) throws Exception {
@@ -90,7 +97,7 @@ public class ItemProcessorImpl  implements ItemProcessor<GwDTO, GwDTO> {
 
 			HttpEntity<String> request = new HttpEntity<String>(headers);
 			try {
-				ResponseEntity<String> response = new RestTemplate().getForEntity(gwConfigTarget, String.class);
+				ResponseEntity<String> response = restTemplate.getForEntity(gwConfigTarget, String.class);
 				String jsonResponse=response.getBody().toString();
 				GatewayStatus gatewayStatus=new Gson().fromJson(jsonResponse,GatewayStatus.class);
 				log.info("Gateway config response  {} ", response.getBody());

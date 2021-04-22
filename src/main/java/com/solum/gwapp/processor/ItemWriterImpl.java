@@ -21,7 +21,9 @@ public class ItemWriterImpl implements  ItemWriter<GwDTO> {
 	public void write(List<? extends GwDTO> gwDTO) throws Exception {
 		log.info("Inserting... records");
 		gwRepository.deleteAll();
+		gwRepository.flush();
 		gwRepository.saveAll(gwDTO);
+		gwRepository.flush();
 	}
 
 }
