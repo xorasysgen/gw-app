@@ -150,12 +150,12 @@ public class APIController {
 		return ResponseEntity.ok().body(start);
 	}
 
-	@GetMapping("/csv/gw")
+	@GetMapping("/csv/gw/export")
 	public void getProcessedCSV(HttpServletResponse httpServletResponse) {
 		csvExport.generateCsvResponse(httpServletResponse);
 	}
 
-	@GetMapping("/csv/gw/list")
+	@GetMapping("/csv/gw/download")
 	public void downloadGatewayList(HttpServletResponse httpServletResponse){
 			log.info("Common Service Target {}", csTargetFinal);
 			try {
@@ -190,6 +190,17 @@ public class APIController {
 	@GetMapping("/csv/gw/run")
 	public String runBatch() {
 		gwStatusRepository.deleteAll();
+		boolean fileExist=resource.exists();
+		if(!fileExist) {
+			try {
+				return  ""
+						.concat("JOB ").concat("Failed").concat("<br> Possible Reason : CSV file does not exist in location :"
+								.concat(resource.getURL().getPath().toString())
+								.concat("<br>Download prepared gateway list [GET /csv/gw/download], file name would be gw_connect.csv, paste [gw_connect.csv] file inside [C:\\env\\csv_data] folder and re-run above service. it can also be filter out by using excel"));
+			} catch (IOException e) {
+				log.error("Job execution failed{}", e.getMessage());
+			}
+		}
 		HashMap<String, JobParameter> map=new HashMap<>();
 		map.put("Time", new JobParameter(System.currentTimeMillis()));
 		JobParameters jobParameters=new JobParameters(map);
@@ -200,11 +211,9 @@ public class APIController {
 				log.info("Job Running");
 			}
 			String status=je.getStatus().toString();
-			boolean fileExist=resource.exists();
-			if(!fileExist)
-				return  "".concat("JOB ").concat(status).concat("<br> Possible Reason : CSV file does not exist in location :".concat(resource.getURL().getPath()));
-			return "".concat("JOB ").concat(status).concat(status.equals("COMPLETED")?"<br>Downloadable file is ready, GO GET /csv/gw":"<br> Possible Reason : CSV file may have Extra Blank line, may have Invalid Character like . or ' etc");
-		} catch (JobExecutionAlreadyRunningException | JobRestartException | JobInstanceAlreadyCompleteException | JobParametersInvalidException | IOException e) {
+
+			return "".concat("JOB ").concat(status).concat(status.equals("COMPLETED")?"<br>Downloadable file is ready, GO GET /csv/gw/export":"<br> Possible Reason : CSV file may have Extra Blank line, may have Invalid Character like . or ' etc");
+		} catch (JobExecutionAlreadyRunningException | JobRestartException | JobInstanceAlreadyCompleteException | JobParametersInvalidException e) {
 			log.error("Job execution failed{}", e.getMessage());
 		}
 		return null;
@@ -212,7 +221,7 @@ public class APIController {
 
 	}
 
-	@GetMapping("/autosaved")
+	@GetMapping("/export")
 	public void getProcessedData(HttpServletResponse httpServletResponse) {
 		csvExport.generateAutoSavedResponse(httpServletResponse);
 	}
@@ -239,8 +248,13 @@ public class APIController {
 				List<Fullgwlist> fullGwList = response!=null ? response.getBody().getFullgwlist(): new ArrayList<>();
 				if(Optional.ofNullable(fullGwList).isPresent()) {
 					long disconnected = fullGwList.stream().filter(gws -> gws.getStatus().equalsIgnoreCase("DISCONNECTED")).count();
+					long connected=gwSize - disconnected;
 					log.info("No of gateway, Disconnected : {}", disconnected);
-					log.info("No of gateway, Connected : {}", gwSize - disconnected);
+					log.info("No of gateway, Connected : {}", connected);
+					if(connected==0) {
+						log.info("Execution prerequisite check failed, Process aborted No Active gateway found! ");
+						return "Execution prerequisite check failed, Process aborted No Active gateway found! ";
+					}
 				}
 				else{
 					log.warn("No gateway found!");
@@ -259,7 +273,7 @@ public class APIController {
 						if(autoSaveDecision!=null && autoSaveDecision.equalsIgnoreCase("save"))
 						AutoSaveGatewayStatusReport(gateway, gatewayStatusReportAutoSaved, apiResponseMap);
 					}
-					return "Execution Completed, Downloadable file is ready, GO GET /autosaved";
+					return "Execution Completed, Downloadable file is ready, GO GET /export";
 				}
 
 			} catch (HttpStatusCodeException e) {

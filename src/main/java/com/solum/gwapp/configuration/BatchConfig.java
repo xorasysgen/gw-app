@@ -1,6 +1,7 @@
 package com.solum.gwapp.configuration;
 
 import com.solum.gwapp.dto.GwDTO;
+import com.solum.gwapp.processor.FileDeletingTasklet;
 import org.springframework.batch.core.Job;
 import org.springframework.batch.core.Step;
 import org.springframework.batch.core.configuration.annotation.EnableBatchProcessing;
@@ -28,6 +29,10 @@ import org.springframework.core.io.Resource;
 @PropertySource(value={"file:${aims.root.path}/env/gw.properties"})
 public class BatchConfig {
 
+
+	@Value("${filename}")
+	Resource resource;
+
 	@Bean
 	public Job job(JobBuilderFactory builderFactory,StepBuilderFactory stepBuilderFactory,
 				   ItemReader<GwDTO> itemReader,
@@ -41,13 +46,25 @@ public class BatchConfig {
 				.writer(itemwriter)
 				.build();
 
+
+		FileDeletingTasklet task = new FileDeletingTasklet();
+		task.setResources(resource);
+		Step delete= stepBuilderFactory.get("delete-gw-connect-csv")
+					.tasklet(task)
+					.build();
+
+
 		return builderFactory.get("Core-GW-Load")
 				.incrementer(new RunIdIncrementer())
 				.start(step)
+				.next(delete)
 				.build();
 
 
 	}
+
+
+
 
 	@Bean
 	public FlatFileItemReader<GwDTO> itemReader(@Value("${filename}") Resource resource){
