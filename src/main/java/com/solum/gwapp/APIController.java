@@ -1,18 +1,15 @@
 package com.solum.gwapp;
 
-import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.text.SimpleDateFormat;
-import java.util.*;
-
 import com.google.gson.Gson;
-import com.solum.gwapp.dto.*;
+import com.solum.gwapp.dto.GatewayStatus;
+import com.solum.gwapp.dto.GatewayStatusReportAutoSaved;
+import com.solum.gwapp.dto.GwResponse;
 import com.solum.gwapp.repository.GatewayStatusReportAutoSavedRepository;
 import com.solum.gwapp.repository.GatewayStatusReportRepository;
-import com.solum.gwapp.service.CSVExport;
 import com.solum.gwapp.repository.GwRepository;
+import com.solum.gwapp.service.CSVExport;
 import lombok.Data;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.batch.core.*;
 import org.springframework.batch.core.launch.JobLauncher;
 import org.springframework.batch.core.repository.JobExecutionAlreadyRunningException;
@@ -20,7 +17,6 @@ import org.springframework.batch.core.repository.JobInstanceAlreadyCompleteExcep
 import org.springframework.batch.core.repository.JobRestartException;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.boot.context.properties.bind.DefaultValue;
 import org.springframework.core.io.FileSystemResource;
 import org.springframework.core.io.Resource;
 import org.springframework.http.HttpEntity;
@@ -31,37 +27,63 @@ import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
-
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.client.HttpStatusCodeException;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestTemplate;
 
 import javax.servlet.http.HttpServletResponse;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.text.SimpleDateFormat;
+import java.util.*;
 
 @Slf4j
 @RestController("/")
 public class APIController {
 
-	@Autowired
 	JobLauncher jobLauncher;
 
-	@Autowired
 	Job gwJob;
 
-	@Autowired
 	GwRepository repository;
 
-	@Autowired
 	GatewayStatusReportRepository gwStatusRepository;
 
-	@Autowired
 	GatewayStatusReportAutoSavedRepository gatewayStatusReportAutoSavedRepository;
 
-	@Autowired
 	CSVExport csvExport;
+
+	@Autowired
+	public void setJobLauncher(JobLauncher jobLauncher) {
+		this.jobLauncher = jobLauncher;
+	}
+
+	@Autowired
+	public void setGwJob(Job gwJob) {
+		this.gwJob = gwJob;
+	}
+
+	@Autowired
+	public void setRepository(GwRepository repository) {
+		this.repository = repository;
+	}
+
+	@Autowired
+	public void setGwStatusRepository(GatewayStatusReportRepository gwStatusRepository) {
+		this.gwStatusRepository = gwStatusRepository;
+	}
+
+	@Autowired
+	public void setGatewayStatusReportAutoSavedRepository(GatewayStatusReportAutoSavedRepository gatewayStatusReportAutoSavedRepository) {
+		this.gatewayStatusReportAutoSavedRepository = gatewayStatusReportAutoSavedRepository;
+	}
+
+	@Autowired
+	public void setCsvExport(CSVExport csvExport) {
+		this.csvExport = csvExport;
+	}
 
 	@Value("${json.body.key.username}")
 	private String username;
@@ -161,7 +183,7 @@ public class APIController {
 			try {
 				ResponseEntity<Root> response = new RestTemplate().getForEntity(csTargetFinal, Root.class);
 				log.info("Common Service response {} ", response.getBody());
-				Integer gwSize = response.getBody().fullgwlist!=null?response.getBody().fullgwlist.size():-1;
+				int gwSize = response.getBody().fullgwlist!=null?response.getBody().fullgwlist.size():-1;
 				log.info("No of gateway found : {}", gwSize);
 				List<Fullgwlist> fullGwLSize = response.getBody().getFullgwlist();
 				if(Optional.ofNullable(fullGwLSize).isPresent()) {
@@ -195,7 +217,7 @@ public class APIController {
 			try {
 				return  ""
 						.concat("prerequisite check failed").concat("<br>Possible Reason : CSV file does not exist in location :"
-						.concat(resource.getURL().getPath().toString())
+						.concat(resource.getURL().getPath())
 						.concat("<br>Download prepared gateway list [GET /csv/gw/download], file name would be gw_connect.csv, paste [gw_connect.csv] file inside [C:\\env\\csv_data] folder and re-run above service. it can also be filter out by using excel"));
 			} catch (IOException e) {
 				log.error("Job execution failed{}", e.getMessage());
@@ -406,7 +428,7 @@ public class APIController {
 	}
 
 
-	private final GatewayStatus fetchGwPollstatus(String gwConfigTarget){
+	private  GatewayStatus fetchGwPollstatus(String gwConfigTarget){
 		{
 			HttpHeaders headers = new HttpHeaders();
 			headers.setContentType(MediaType.TEXT_PLAIN);
@@ -436,7 +458,7 @@ public class APIController {
 
 
 
-	private final Resource createAndUploadFile(Req req)  {
+	private Resource createAndUploadFile(Req req)  {
 		Path file = null;
 		try {
 			file = Files.createTempFile(filename, fileExtension);
