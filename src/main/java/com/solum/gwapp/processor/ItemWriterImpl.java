@@ -20,15 +20,19 @@ import org.springframework.stereotype.Component;
 @Slf4j
 public class ItemWriterImpl implements  ItemWriter<GwDTO> {
 
-	@Autowired
 	GwRepository gwRepository;
+
+	@Autowired
+	public void setGwRepository(GwRepository gwRepository) {
+		this.gwRepository = gwRepository;
+	}
 
 	@Value("${filename}")
 	Resource resource;
 
 	@Override
 	public void write(List<? extends GwDTO> gwDTO) throws Exception {
-		log.info("Inserting... records");
+		log.info("Finalising Job...");
 		gwRepository.deleteAll();
 		gwRepository.flush();
 		gwRepository.saveAll(gwDTO);

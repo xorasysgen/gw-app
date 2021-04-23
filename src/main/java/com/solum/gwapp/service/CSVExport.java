@@ -3,10 +3,8 @@ package com.solum.gwapp.service;
 import com.solum.gwapp.APIController;
 import com.solum.gwapp.dto.GatewayStatusReport;
 import com.solum.gwapp.dto.GatewayStatusReportAutoSaved;
-import com.solum.gwapp.dto.GwDTO;
 import com.solum.gwapp.repository.GatewayStatusReportAutoSavedRepository;
 import com.solum.gwapp.repository.GatewayStatusReportRepository;
-import com.solum.gwapp.repository.GwRepository;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.csv.CSVFormat;
 import org.apache.commons.csv.CSVPrinter;
@@ -25,7 +23,6 @@ import java.util.List;
 @Slf4j
 public class CSVExport {
 
-   @Autowired
    GatewayStatusReportRepository gatewayStatusReportRepository;
 
    @Value("${json.body.period}")
@@ -34,8 +31,17 @@ public class CSVExport {
    @Value("${json.body.count}")
    private String count;
 
-   @Autowired
    GatewayStatusReportAutoSavedRepository gatewayStatusReportAutoSavedRepository;
+
+   @Autowired
+   public void setGatewayStatusReportRepository(GatewayStatusReportRepository gatewayStatusReportRepository) {
+      this.gatewayStatusReportRepository = gatewayStatusReportRepository;
+   }
+
+   @Autowired
+   public void setGatewayStatusReportAutoSavedRepository(GatewayStatusReportAutoSavedRepository gatewayStatusReportAutoSavedRepository) {
+      this.gatewayStatusReportAutoSavedRepository = gatewayStatusReportAutoSavedRepository;
+   }
 
    public void generateAutoSavedResponse(HttpServletResponse response) {
 

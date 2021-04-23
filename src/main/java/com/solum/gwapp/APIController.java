@@ -194,9 +194,9 @@ public class APIController {
 		if(!fileExist) {
 			try {
 				return  ""
-						.concat("JOB ").concat("Failed").concat("<br> Possible Reason : CSV file does not exist in location :"
-								.concat(resource.getURL().getPath().toString())
-								.concat("<br>Download prepared gateway list [GET /csv/gw/download], file name would be gw_connect.csv, paste [gw_connect.csv] file inside [C:\\env\\csv_data] folder and re-run above service. it can also be filter out by using excel"));
+						.concat("prerequisite check failed").concat("<br>Possible Reason : CSV file does not exist in location :"
+						.concat(resource.getURL().getPath().toString())
+						.concat("<br>Download prepared gateway list [GET /csv/gw/download], file name would be gw_connect.csv, paste [gw_connect.csv] file inside [C:\\env\\csv_data] folder and re-run above service. it can also be filter out by using excel"));
 			} catch (IOException e) {
 				log.error("Job execution failed{}", e.getMessage());
 			}

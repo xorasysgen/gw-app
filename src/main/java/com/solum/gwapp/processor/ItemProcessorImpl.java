@@ -7,7 +7,6 @@ import com.solum.gwapp.dto.GatewayStatusReport;
 import com.solum.gwapp.dto.GwDTO;
 import com.solum.gwapp.dto.GwResponse;
 import com.solum.gwapp.repository.GatewayStatusReportRepository;
-import com.solum.gwapp.repository.GwRepository;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.batch.item.ItemProcessor;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -17,13 +16,10 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Component;
-import org.springframework.util.LinkedMultiValueMap;
-import org.springframework.util.MultiValueMap;
 import org.springframework.web.client.HttpStatusCodeException;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestTemplate;
 
-import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
@@ -32,16 +28,24 @@ import java.util.Optional;
 @Slf4j
 public class ItemProcessorImpl  implements ItemProcessor<GwDTO, GwDTO> {
 
-	@Autowired
 	private APIController apiController;
 
 	@Value("${gw.target.protocol}")
 	private String gwTargetProtocol;
 
-	@Autowired
-	GatewayStatusReportRepository gwstatusRepository;
+	GatewayStatusReportRepository gwStatusRepository;
 
 	RestTemplate restTemplate;
+
+	@Autowired
+	public void setApiController(APIController apiController) {
+		this.apiController = apiController;
+	}
+
+	@Autowired
+	public void setGwStatusRepository(GatewayStatusReportRepository gwStatusRepository) {
+		this.gwStatusRepository = gwStatusRepository;
+	}
 
 	@Autowired
 	public void setRestTemplate(RestTemplate restTemplate) {
@@ -83,8 +87,8 @@ public class ItemProcessorImpl  implements ItemProcessor<GwDTO, GwDTO> {
 		}
 
 		log.info("saving gatewayStatusReport into database");
-		gwstatusRepository.saveAndFlush(gatewayStatusReport);
-		gwstatusRepository.flush();
+		gwStatusRepository.saveAndFlush(gatewayStatusReport);
+		gwStatusRepository.flush();
 
 		return  gwDTO;
 	}
