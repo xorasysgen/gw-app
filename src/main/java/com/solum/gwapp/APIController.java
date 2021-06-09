@@ -27,6 +27,7 @@ import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.client.HttpStatusCodeException;
 import org.springframework.web.client.RestClientException;
@@ -178,24 +179,36 @@ public class APIController {
 	}
 
 	@GetMapping("/csv/gw/download")
-	public void downloadGatewayList(HttpServletResponse httpServletResponse){
+	public void downloadGatewayList(@RequestParam("status") Optional<String> status, HttpServletResponse httpServletResponse){
 			log.info("Common Service Target {}", csTargetFinal);
+			String statusParam=status.isPresent()?status.get():"NONE";
+			if(statusParam.equalsIgnoreCase("NONE")){
+				log.warn("without status parameter nothing downloadable returning to caller");
+		    return;
+			}
+			log.info("CSV EXPORT PARAM {}" , statusParam);
+
 			try {
 				ResponseEntity<Root> response = new RestTemplate().getForEntity(csTargetFinal, Root.class);
-				log.info("Common Service response {} ", response.getBody());
+				log.debug("Common Service response {} ", response.getBody());
 				int gwSize = response.getBody().fullgwlist!=null?response.getBody().fullgwlist.size():-1;
 				log.info("No of gateway found : {}", gwSize);
 				List<Fullgwlist> fullGwLSize = response.getBody().getFullgwlist();
 				if(Optional.ofNullable(fullGwLSize).isPresent()) {
-					long disconnected = fullGwLSize.stream().filter(gws -> gws.getStatus().equalsIgnoreCase("DISCONNECTED")).count();
-					log.info("No of gateway, Disconnected : {}", disconnected);
-					log.info("No of gateway, Connected : {}", gwSize - disconnected);
+				   long disconnected = fullGwLSize.stream().filter(gws -> gws.getStatus().equalsIgnoreCase("DISCONNECTED")).count();
+                   long connected = fullGwLSize.stream().filter(gws -> gws.getStatus().equalsIgnoreCase("CONNECTED")).count();
+                   long notReady = fullGwLSize.stream().filter(gws -> gws.getStatus().equalsIgnoreCase("NOT_READY")).count();
+					long unregistered = fullGwLSize.stream().filter(gws -> gws.getStatus().equalsIgnoreCase("UNREGISTERED")).count();
+					log.info("No of gateway, CONNECTED : {}", connected);
+					log.info("No of gateway, DISCONNECTED : {}", disconnected);
+					log.info("No of gateway, NOT_READY : {}", notReady);
+					log.info("No of gateway, UNREGISTERED : {}", unregistered);
 				}
 				else{
 					log.warn("No gateway found!");
 				}
 				if (gwSize > 0) {
-					csvExport.generateCsvResponse(httpServletResponse,fullGwLSize);
+					csvExport.generateCsvResponse(httpServletResponse,fullGwLSize,statusParam);
 				}
 
 			} catch (HttpStatusCodeException e) {
@@ -205,7 +218,7 @@ public class APIController {
 			} catch (Exception e) {
 				log.error("Common Service failed general reason :{}", e.getMessage());
 			}
-		log.info("File Download Completed");
+
 		}
 
 
@@ -218,7 +231,7 @@ public class APIController {
 				return  ""
 						.concat("prerequisite check failed").concat("<br>Possible Reason : CSV file does not exist in location :"
 						.concat(resource.getURL().getPath())
-						.concat("<br>Download prepared gateway list [GET /csv/gw/download], file name would be gw_connect.csv, paste [gw_connect.csv] file inside [C:\\env\\csv_data] folder and re-run above service. it can also be filter out by using excel"));
+						.concat("<br>Download prepared gateway list [GET /csv/gw/download], file name would be gw_connect.csv, paste [gw_connect.csv] file inside [DRIVE:\\env\\csv_data] folder and re-run above service. it can also be filter out by using excel"));
 			} catch (IOException e) {
 				log.error("Job execution failed{}", e.getMessage());
 			}
@@ -295,7 +308,11 @@ public class APIController {
 						if(autoSaveDecision!=null && autoSaveDecision.equalsIgnoreCase("save"))
 						AutoSaveGatewayStatusReport(gateway, gatewayStatusReportAutoSaved, apiResponseMap);
 					}
+
+					if(autoSaveDecision!=null && autoSaveDecision.equalsIgnoreCase("save"))
 					return "Execution Completed, Downloadable file is ready, GO GET /export";
+					else
+					return "Execution Completed";
 				}
 
 			} catch (HttpStatusCodeException e) {
@@ -319,7 +336,7 @@ public class APIController {
 			GwResponse gwResponse = new Gson().fromJson(successJSON, GwResponse.class);
 			String pollingStatus=gwResponse.isResult()?"Success":"Failed";
 			String gwConfigTarget=prepareGWURLConfig(gateway.getIpAddress());
-			GatewayStatus gatewayStatus=fetchGwPollstatus(gwConfigTarget);
+			GatewayStatus gatewayStatus= fetchGwPollStatus(gwConfigTarget);
 			if(Optional.ofNullable(gatewayStatus).isPresent()) {
 				gatewayStatusReportAutoSaved.setGwIP(gateway.getIpAddress());
 				gatewayStatusReportAutoSaved.setPollCount(gatewayStatus.getPollCount());
@@ -428,7 +445,7 @@ public class APIController {
 	}
 
 
-	private  GatewayStatus fetchGwPollstatus(String gwConfigTarget){
+	private  GatewayStatus fetchGwPollStatus(String gwConfigTarget){
 		{
 			HttpHeaders headers = new HttpHeaders();
 			headers.setContentType(MediaType.TEXT_PLAIN);
