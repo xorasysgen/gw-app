@@ -1,3 +1,5 @@
+${AnsiStyle.BOLD}
+${AnsiColor.BRIGHT_BLUE}
       ___      .______    __          ____    ____  ___             _______ ____    __    ____
      /   \     |   _  \  |  |         \   \  /   / |__ \           /  _____|\   \  /  \  /   /
     /  ^  \    |  |_)  | |  |  ______  \   \/   /     ) |  ______ |  |  __   \   \/    \/   /
@@ -7,3 +9,8 @@
 
 ${AnsiColor.BRIGHT_BLUE}:: Solum :: Running Spring Boot ${spring-boot.version} ::${AnsiColor.DEFAULT}
 
+Spring Boot Version = ${spring-boot.formatted-version}
+Application Name = GwApp
+Environment = ${spring.profiles.active}
+port = ${server.port}
+spring.h2.console.enabled = ${spring.h2.console.enabled}
