@@ -1,6 +1,7 @@
 package com.solum.gwapp.service;
 
 import com.solum.gwapp.APIController;
+import com.solum.gwapp.annotation.ExecutionTimeTracker;
 import com.solum.gwapp.dto.GatewayStatusReport;
 import com.solum.gwapp.dto.GatewayStatusReportAutoSaved;
 import com.solum.gwapp.repository.GatewayStatusReportAutoSavedRepository;
@@ -44,6 +45,7 @@ public class CSVExport {
       this.gatewayStatusReportAutoSavedRepository = gatewayStatusReportAutoSavedRepository;
    }
 
+   @ExecutionTimeTracker
    public void generateAutoSavedResponse(HttpServletResponse response) {
 
       String filename = "gw_connect_status_auto_saved".concat(new Date().toString()).concat(".csv");
@@ -77,7 +79,7 @@ public class CSVExport {
          }
       }
    }
-
+   @ExecutionTimeTracker
    public void generateCsvResponse(HttpServletResponse response) {
 
       String filename = "gw_connect_job_status_".concat(new Date().toString()).concat(".csv");
